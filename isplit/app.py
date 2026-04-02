@@ -10,8 +10,20 @@ pattern_neg = [
     r'^\s*[ivx]+\s+.*$',
     r'^.*\s+[ivx]+\s*$'
 ]
+pattern_dsd = r'^\s*\d+\s+-\s+'
+pattern_dfl = [
+    r'^\s*Chapter\s+\d+',
+    r'^\s*Foreword',
+    r'^\s*Preface',
+    r'^\s*Acknowledgements',
+    r'^\s*Introduction',
+    r'^\s*Backword',
+    r'^\s*Index',
+    r'^\s*Contents',
+    r'^\s*References'
+]
 
-def split_by_headers(input_path):
+def split_by_headers(input_path, dsdok):
     with open(input_path, 'rb') as file:
         pdf_reader = PyPDF2.PdfReader(file)
         total_pages = len(pdf_reader.pages)
@@ -20,28 +32,44 @@ def split_by_headers(input_path):
         for page_num in range(total_pages - 1):
             page = pdf_reader.pages[page_num]
             text = page.extract_text()
+            ok = False
             if text:
-                first_line = text.split('\n')[0] if '\n' in text else text
                 ok = True
-                if re.search(pattern_pos, first_line.strip()):
+                if dsdok:
+                    lines = text.split('\n') if '\n' in text else [text]
+                    for line in lines:
+                        if re.search(pattern_dsd, line):
+                            delimiter_positions.append(page_num)
+                            ok = False
+                        for pattern in pattern_dfl:
+                            if re.search(pattern, line):
+                                delimiter_positions.append(page_num)
+                                ok = False
+                first_line = text.split('\n')[0] if '\n' in text else text
+                if ok and re.search(pattern_pos, first_line.strip()):
                     delimiter_positions.append(page_num)
                     ok = False
-                for pattern in pattern_neg:
-                    if re.search(pattern, first_line.strip()):
-                        ok = False
                 if ok:
-                    delimiter_positions.append(page_num)
+                    for pattern in pattern_neg:
+                        if re.search(pattern, first_line.strip()):
+                            ok = False
+                if ok:
+                    for pattern in pattern_dfl:
+                        if re.search(pattern, first_line.strip()):
+                            delimiter_positions.append(page_num)
         if total_pages > 0:
             delimiter_positions.append(total_pages)
         delimiter_positions = sorted(set(delimiter_positions))
         return delimiter_positions
 
 def main():
-    input_path = '/content/drive/MyDrive/input.pdf'
-    output_dir = '/content/drive/MyDrive/split_chapters'
+    #input_path = '/content/drive/MyDrive/input.pdf'
+    input_path = input("Introduceți calea către PDF (exemplu: /content/drive/MyDrive/input.pdf): ")
+    dsdok = input("Permiteți heading de capitol mai jos în pagină (d/n)?") != "n"
+    input_file = Path(input_path)
+    output_dir = input_file.parent/f"{input_file.stem}_split_chapters"
     if not os.path.exists(input_path):
         print(f"❌ Error: Input file not found at {input_path}")
-        print("Please make sure your PDF is at: /content/drive/MyDrive/input.pdf")
         return
     print("=" * 70)
     print("📚 PDF CHAPTER SPLITTER")
@@ -50,7 +78,7 @@ def main():
     print(f"📂 Output directory: {output_dir}")
     print("=" * 70)
     os.makedirs(output_dir, exist_ok=True)
-    delimiter_positions = split_by_headers(input_path)
+    delimiter_positions = split_by_headers(input_path, dsdok)
     with open(input_path, 'rb') as file:
         pdf_reader = PyPDF2.PdfReader(file)
         total_pages = len(pdf_reader.pages)
