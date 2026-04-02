@@ -6,6 +6,6 @@
 !echo "Alegeți dintre următoarele aplicații:"
 !echo "isplit ocr_pdf pdarg pdf_splitter"
 !read ans
-%cd ans
+%cd $ans
 !pip install -r requirements.txt
 %run app.py
