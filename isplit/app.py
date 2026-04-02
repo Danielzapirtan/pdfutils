@@ -64,7 +64,7 @@ def split_by_headers(input_path, dsdok):
 
 def main():
     #input_path = '/content/drive/MyDrive/input.pdf'
-    input_path = input("Introduceți calea către PDF (exemplu: /content/drive/MyDrive/input.pdf): ")
+    input_path = input("Introduceți calea către PDF (exemplu: /content/pdfutils/input.pdf): ")
     dsdok = input("Permiteți heading de capitol mai jos în pagină (d/n)?") != "n"
     input_file = Path(input_path)
     output_dir = input_file.parent/f"{input_file.stem}_split_chapters"
