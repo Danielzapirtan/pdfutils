@@ -1,0 +1,11 @@
+%cd /content/
+!apt install git tesseract-ocr tesseract-ocr-ron poppler-utils
+!rm -rf pdf_notebooks
+!git clone https://github.com/Danielzapirtan/pdf_notebooks
+%cd pdf_notebooks
+!echo "Alegeți dintre următoarele aplicații:"
+!echo "isplit ocr_pdf pdarg pdf_splitter"
+!read ans
+%cd ans
+!pip install -r requirements.txt
+%run app.py
