@@ -1,0 +1,10 @@
+# Core PDF processing
+PyMuPDF>=1.23.0
+
+# OCR support
+pytesseract>=0.3.10
+pdf2image>=1.16.0
+Pillow>=10.0.0
+
+# Additional utilities (optional but helpful)
+pathlib>=1.0.1

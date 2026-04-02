@@ -1,0 +1,5 @@
+{
+  "name": "PDF Chapter Splitter",
+  "description": "An intelligent tool to split English psychotherapy books and other PDFs into individual chapters with AI-powered boundary detection.",
+  "requestFramePermissions": []
+}
