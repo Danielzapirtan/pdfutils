@@ -17,4 +17,4 @@ fi
 
 cd $CONTENT/pdfutils/$APP
 pip install -r requirements.txt
-python3 app.py <../input.txt
+python3 app.py </dev/stdin
