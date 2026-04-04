@@ -637,4 +637,5 @@ if __name__ == "__main__":
         print(f"ML Confidence: {result_ml.confidence_score:.2f}")
         print(f"ML Entries: {len(result_ml.entries)}")
     
-    main()
+    result = extract_toc('input.pdf')
+    print(result.to_markdown())
