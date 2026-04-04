@@ -15,10 +15,6 @@ if ! test -d $CONTENT/pdfutils; then
     git clone https://github.com/Danielzapirtan/pdfutils
 fi
 
-cd $CONTENT/pdfutils
-echo "Alegeti aplicatia"
-echo "pdarg isplit ocr_pdf pdf_splitter"
-read ans
-cd $CONTENT/pdfutils/$ans
+cd $CONTENT/pdfutils/$APP
 pip install -r requirements.txt
 python3 app.py
