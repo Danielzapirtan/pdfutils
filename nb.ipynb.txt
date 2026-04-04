@@ -1,7 +1,2 @@
 %cd /content/
-!apt install git tesseract-ocr tesseract-ocr-ron poppler-utils
-!rm -rf pdfutils
-!git clone https://github.com/Danielzapirtan/pdfutils
-%cd pdfutils/isplit
-!pip install -r requirements.txt
-%run app.py
+curl -fsSL https://raw.githubusercontent.com/Danielzapirtan/pdfutils/main/setup.sh | bash
