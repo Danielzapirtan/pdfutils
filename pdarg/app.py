@@ -637,5 +637,6 @@ if __name__ == "__main__":
         print(f"ML Confidence: {result_ml.confidence_score:.2f}")
         print(f"ML Entries: {len(result_ml.entries)}")
     
-    result = extract_toc('input.pdf')
+    pdf_file = input('Introduceți calea către filșierul PDF')
+    result = extract_toc(pdf_file)
     print(result.to_markdown())
