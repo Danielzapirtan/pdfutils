@@ -5,6 +5,7 @@ if test -d /content/; then
 else
     CONTENT=$HOME
 fi
+sudo apt update
 sudo apt install git tesseract-ocr tesseract-ocr-ron poppler-utils -y
 if ! test -d $CONTENT/pdfutils; then
     cd
