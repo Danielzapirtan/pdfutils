@@ -93,7 +93,9 @@ def split_by_chapters(pdf_path):
             level, title, page = entry
             if level == 1:  # top-level chapters
                 start = page - 1
-                end = toc[i+1][2] - 1 if i+1 < len(toc) else len(doc)
+                next_level1 = next((toc[j][2] for j in range(i + 1, len(toc)) if toc[j][0] == 1), len(doc))
+                end = next_level1 - 1        
+                #end = toc[i+1][2] - 1 if i+1 < len(toc) else len(doc)
                 splits.append((title, start, end))
 
     # Create separate PDFs
