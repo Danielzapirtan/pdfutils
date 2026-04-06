@@ -232,14 +232,16 @@ def main():
         ranges = input("Enter page ranges (e.g., 1-3,5,7-10): ")
         split_by_pages(pdf_file, ranges)
     elif choice == "2":
-        split_by_chapters(pdf_file)
+        #split_by_chapters(pdf_file)
+        print('Not implemented. Sorry')
     elif choice == "3":
         make_searchable(pdf_file)
     elif choice == "4":
         mode = input("TOC mode (normal/summary): ").strip().lower()
         if mode not in ["normal", "summary"]:
             mode = "normal"
-        make_detailed_toc(pdf_file, mode)
+        #make_detailed_toc(pdf_file, mode)
+        print('Not implememted. Sorry')
     else:
         print("Invalid choice")
 
