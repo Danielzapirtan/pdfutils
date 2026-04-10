@@ -75,7 +75,7 @@ export async function generateDetailedToc(pdfBase64: string, apiKey: string): Pr
 export async function extractTextForOcr(pdfBase64: string, apiKey: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash-lite",
     contents: [
       {
         parts: [
