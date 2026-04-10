@@ -8,7 +8,7 @@ export interface Chapter {
 export async function detectChapters(pdfBase64: string, apiKey: string): Promise<Chapter[]> {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash-lite",
     contents: [
       {
         parts: [
