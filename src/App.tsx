@@ -473,7 +473,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="mt-auto py-12 text-sage/40 text-sm flex flex-col items-center gap-2">
-        <p>© 2026 pdfutils • Professional PDF Suite</p>
+        <p>© 2026 Antoniu-Daniel Zăpîrțan • Professional PDF Suite</p>
         <p className="italic">Optimized for psychotherapy and academic literature</p>
       </footer>
     </div>
