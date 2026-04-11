@@ -52,6 +52,47 @@ export async function splitPdfByRanges(pdfBytes: Uint8Array, ranges: string): Pr
   return results;
 }
 
+export async function getChunkedPageRanges(pdfBytes: Uint8Array, maxChunkSizeMb: number = 40): Promise<{ start: number; end: number }[]> {
+  const srcDoc = await PDFDocument.load(pdfBytes);
+  const totalPages = srcDoc.getPageCount();
+  const totalSize = pdfBytes.byteLength;
+  const avgPageSize = totalSize / totalPages;
+  const maxChunkSizeBytes = maxChunkSizeMb * 1024 * 1024;
+  
+  const chunks: { start: number; end: number }[] = [];
+  let currentStart = 1;
+  
+  while (currentStart <= totalPages) {
+    // Estimate how many pages fit in the chunk
+    let pagesInChunk = Math.floor(maxChunkSizeBytes / avgPageSize);
+    if (pagesInChunk < 1) pagesInChunk = 1;
+    
+    let currentEnd = Math.min(currentStart + pagesInChunk - 1, totalPages);
+    chunks.push({ start: currentStart, end: currentEnd });
+    currentStart = currentEnd + 1;
+  }
+  
+  return chunks;
+}
+
+export async function extractPdfChunk(pdfBytes: Uint8Array, start: number, end: number): Promise<Uint8Array> {
+  const srcDoc = await PDFDocument.load(pdfBytes);
+  const newDoc = await PDFDocument.create();
+  const pageIndices: number[] = [];
+  
+  for (let i = start; i <= end; i++) {
+    if (i > 0 && i <= srcDoc.getPageCount()) pageIndices.push(i - 1);
+  }
+  
+  if (pageIndices.length > 0) {
+    const copiedPages = await newDoc.copyPages(srcDoc, pageIndices);
+    copiedPages.forEach(page => newDoc.addPage(page));
+    return await newDoc.save();
+  }
+  
+  return new Uint8Array();
+}
+
 export async function prependToc(pdfBytes: Uint8Array, tocTitle: string, tocContent: string): Promise<Uint8Array> {
   const srcDoc = await PDFDocument.load(pdfBytes);
   const tocDoc = await PDFDocument.create();

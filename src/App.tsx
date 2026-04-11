@@ -22,7 +22,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import JSZip from 'jszip';
 import { cn } from './lib/utils';
-import { splitPdfByRanges, prependToc, extractTextFromPdf } from './lib/pdf';
+import { splitPdfByRanges, prependToc, extractTextFromPdf, getChunkedPageRanges, extractPdfChunk } from './lib/pdf';
 import { detectChapters, generateDetailedToc, extractTextForOcr, type Chapter } from './services/gemini';
 import { detectChaptersOpenAI, generateDetailedTocOpenAI, extractTextForOcrOpenAI } from './services/openai';
 import { detectChaptersClaude, generateDetailedTocClaude, extractTextForOcrClaude } from './services/claude';
@@ -176,22 +176,59 @@ export default function App() {
   const runChapterDetect = async () => {
     if (!pdfBytes || !apiKey) return;
     setLoading(true);
-    setStatus('Analyzing chapters with AI...');
+    setStatus('Preparing chunks for analysis...');
     startTimer();
     try {
-      let detected: Chapter[] = [];
-      if (provider === 'gemini') {
-        const base64 = toBase64(pdfBytes);
-        detected = await detectChapters(base64, apiKey, geminiModel);
-      } else if (provider === 'openai') {
-        const text = await extractTextFromPdf(pdfBytes);
-        detected = await detectChaptersOpenAI(text, apiKey, openaiModel);
-      } else {
-        const text = await extractTextFromPdf(pdfBytes);
-        detected = await detectChaptersClaude(text, apiKey, claudeModel);
+      const chunks = await getChunkedPageRanges(pdfBytes, 40); // 40MB chunks
+      let allDetected: Chapter[] = [];
+      
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        setStatus(`Analyzing chunk ${i + 1}/${chunks.length} (Pages ${chunk.start}-${chunk.end})...`);
+        
+        const chunkBytes = await extractPdfChunk(pdfBytes, chunk.start, chunk.end);
+        let chunkDetected: Chapter[] = [];
+        
+        if (provider === 'gemini') {
+          const base64 = toBase64(chunkBytes);
+          chunkDetected = await detectChapters(base64, apiKey, geminiModel);
+        } else if (provider === 'openai') {
+          const text = await extractTextFromPdf(chunkBytes);
+          chunkDetected = await detectChaptersOpenAI(text, apiKey, openaiModel);
+        } else {
+          const text = await extractTextFromPdf(chunkBytes);
+          chunkDetected = await detectChaptersClaude(text, apiKey, claudeModel);
+        }
+        
+        // Offset page numbers
+        const offsetDetected = chunkDetected.map(c => ({
+          ...c,
+          startPage: c.startPage + chunk.start - 1
+        }));
+        
+        allDetected = [...allDetected, ...offsetDetected];
       }
-      setChapters(detected);
-      setStatus(`Detected ${detected.length} chapters in ${formatTime(timer + 1)}.`);
+      
+      // Clever Merge Algorithm: Sort by page, remove duplicates/overlaps
+      allDetected.sort((a, b) => a.startPage - b.startPage);
+      
+      const merged: Chapter[] = [];
+      const seenTitles = new Set<string>();
+      
+      for (const chapter of allDetected) {
+        const titleKey = `${chapter.title.toLowerCase().trim()}_${chapter.startPage}`;
+        if (!seenTitles.has(titleKey)) {
+          // Also check if we already have a chapter at this exact page
+          const existingAtPage = merged.find(m => m.startPage === chapter.startPage);
+          if (!existingAtPage) {
+            merged.push(chapter);
+            seenTitles.add(titleKey);
+          }
+        }
+      }
+      
+      setChapters(merged);
+      setStatus(`Detected ${merged.length} chapters across ${chunks.length} chunks in ${formatTime(timer + 1)}.`);
     } catch (e) {
       handleError(e, 'Error detecting chapters.');
     } finally {
@@ -248,22 +285,35 @@ export default function App() {
   const runOcr = async () => {
     if (!pdfBytes || !apiKey) return;
     setLoading(true);
-    setStatus('Performing OCR/Text Extraction...');
+    setStatus('Preparing chunks for OCR...');
     startTimer();
     try {
-      let text = '';
-      if (provider === 'gemini') {
-        const base64 = toBase64(pdfBytes);
-        text = await extractTextForOcr(base64, apiKey, geminiModel);
-      } else if (provider === 'openai') {
-        const extracted = await extractTextFromPdf(pdfBytes);
-        text = await extractTextForOcrOpenAI(extracted, apiKey, openaiModel);
-      } else {
-        const extracted = await extractTextFromPdf(pdfBytes);
-        text = await extractTextForOcrClaude(extracted, apiKey, claudeModel);
+      const chunks = await getChunkedPageRanges(pdfBytes, 40);
+      let fullText = '';
+      
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        setStatus(`OCR on chunk ${i + 1}/${chunks.length}...`);
+        
+        const chunkBytes = await extractPdfChunk(pdfBytes, chunk.start, chunk.end);
+        let chunkText = '';
+        
+        if (provider === 'gemini') {
+          const base64 = toBase64(chunkBytes);
+          chunkText = await extractTextForOcr(base64, apiKey, geminiModel);
+        } else if (provider === 'openai') {
+          const extracted = await extractTextFromPdf(chunkBytes);
+          chunkText = await extractTextForOcrOpenAI(extracted, apiKey, openaiModel);
+        } else {
+          const extracted = await extractTextFromPdf(chunkBytes);
+          chunkText = await extractTextForOcrClaude(extracted, apiKey, claudeModel);
+        }
+        
+        fullText += `\n--- Chunk ${i + 1} (Pages ${chunk.start}-${chunk.end}) ---\n${chunkText}\n`;
       }
-      setOcrResult(text);
-      setStatus(`OCR Complete in ${formatTime(timer + 1)}.`);
+      
+      setOcrResult(fullText);
+      setStatus(`OCR Complete across ${chunks.length} chunks in ${formatTime(timer + 1)}.`);
     } catch (e) {
       handleError(e, 'Error during OCR.');
     } finally {
@@ -275,25 +325,38 @@ export default function App() {
   const runToc = async () => {
     if (!pdfBytes || !apiKey) return;
     setLoading(true);
-    setStatus('Generating detailed TOC...');
+    setStatus('Preparing chunks for TOC generation...');
     startTimer();
     try {
-      let toc = '';
-      if (provider === 'gemini') {
-        const base64 = toBase64(pdfBytes);
-        toc = await generateDetailedToc(base64, apiKey, geminiModel);
-      } else if (provider === 'openai') {
-        const text = await extractTextFromPdf(pdfBytes);
-        toc = await generateDetailedTocOpenAI(text, apiKey, openaiModel);
-      } else {
-        const text = await extractTextFromPdf(pdfBytes);
-        toc = await generateDetailedTocClaude(text, apiKey, claudeModel);
-      }
-      setTocResult(toc);
+      const chunks = await getChunkedPageRanges(pdfBytes, 40);
+      let fullToc = '';
       
-      const newPdfBytes = await prependToc(pdfBytes, 'Pedagogical Architecture - Detailed TOC', toc);
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        setStatus(`Generating TOC for chunk ${i + 1}/${chunks.length}...`);
+        
+        const chunkBytes = await extractPdfChunk(pdfBytes, chunk.start, chunk.end);
+        let chunkToc = '';
+        
+        if (provider === 'gemini') {
+          const base64 = toBase64(chunkBytes);
+          chunkToc = await generateDetailedToc(base64, apiKey, geminiModel);
+        } else if (provider === 'openai') {
+          const text = await extractTextFromPdf(chunkBytes);
+          chunkToc = await generateDetailedTocOpenAI(text, apiKey, openaiModel);
+        } else {
+          const text = await extractTextFromPdf(chunkBytes);
+          chunkToc = await generateDetailedTocClaude(text, apiKey, claudeModel);
+        }
+        
+        fullToc += `\n--- Section ${i + 1} (Pages ${chunk.start}-${chunk.end}) ---\n${chunkToc}\n`;
+      }
+      
+      setTocResult(fullToc);
+      
+      const newPdfBytes = await prependToc(pdfBytes, 'Pedagogical Architecture - Detailed TOC', fullToc);
       handleDownload(newPdfBytes, `pedagogical_architecture_${file?.name || 'document'}.pdf`);
-      setStatus(`Success! Enhanced PDF downloaded in ${formatTime(timer + 1)}.`);
+      setStatus(`Success! Enhanced PDF with ${chunks.length} section TOCs in ${formatTime(timer + 1)}.`);
     } catch (e) {
       handleError(e, 'Error generating TOC.');
     } finally {
