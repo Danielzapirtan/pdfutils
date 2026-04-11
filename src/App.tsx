@@ -40,6 +40,9 @@ export default function App() {
   const [customApiKey, setCustomApiKey] = useState('');
   const [customOpenAiKey, setCustomOpenAiKey] = useState('');
   const [customClaudeApiKey, setCustomClaudeApiKey] = useState('');
+  const [geminiModel, setGeminiModel] = useState('gemini-3.1-flash-lite-preview');
+  const [openaiModel, setOpenaiModel] = useState('gpt-4o-mini');
+  const [claudeModel, setClaudeModel] = useState('claude-3-haiku-20240307');
   const [provider, setProvider] = useState<Provider>('openai');
   const [showSettings, setShowSettings] = useState(false);
   const [timer, setTimer] = useState(0);
@@ -60,6 +63,12 @@ export default function App() {
       return customClaudeApiKey || process.env.ANTHROPIC_API_KEY || '';
     }
   }, [customApiKey, customOpenAiKey, customClaudeApiKey, provider]);
+
+  const currentModel = useMemo(() => {
+    if (provider === 'gemini') return geminiModel;
+    if (provider === 'openai') return openaiModel;
+    return claudeModel;
+  }, [provider, geminiModel, openaiModel, claudeModel]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const selectedFile = acceptedFiles[0];
@@ -109,8 +118,18 @@ export default function App() {
   const handleError = (e: any, defaultMsg: string) => {
     console.error(e);
     const msg = e?.message || String(e);
-    if (msg.includes('429') || msg.toLowerCase().includes('quota')) {
-      setStatus('API Quota Exceeded. Please check your billing or switch providers in Settings.');
+    if (msg.includes('429') || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('credit balance')) {
+      const fallbackMsg = provider !== 'gemini' 
+        ? `Quota exceeded for ${provider}. Auto-switching to Gemini (free). Please try again.`
+        : 'API Quota/Credit Exceeded. Please check your billing or switch providers in Settings.';
+      
+      setStatus(fallbackMsg);
+      
+      if (provider !== 'gemini') {
+        setProvider('gemini');
+      }
+    } else if (msg.includes('404') || msg.toLowerCase().includes('not found')) {
+      setStatus(`Model "${currentModel}" not found. Please select a different model in Settings.`);
     } else {
       setStatus(defaultMsg);
     }
@@ -163,13 +182,13 @@ export default function App() {
       let detected: Chapter[] = [];
       if (provider === 'gemini') {
         const base64 = toBase64(pdfBytes);
-        detected = await detectChapters(base64, apiKey);
+        detected = await detectChapters(base64, apiKey, geminiModel);
       } else if (provider === 'openai') {
         const text = await extractTextFromPdf(pdfBytes);
-        detected = await detectChaptersOpenAI(text, apiKey);
+        detected = await detectChaptersOpenAI(text, apiKey, openaiModel);
       } else {
         const text = await extractTextFromPdf(pdfBytes);
-        detected = await detectChaptersClaude(text, apiKey);
+        detected = await detectChaptersClaude(text, apiKey, claudeModel);
       }
       setChapters(detected);
       setStatus(`Detected ${detected.length} chapters in ${formatTime(timer + 1)}.`);
@@ -235,13 +254,13 @@ export default function App() {
       let text = '';
       if (provider === 'gemini') {
         const base64 = toBase64(pdfBytes);
-        text = await extractTextForOcr(base64, apiKey);
+        text = await extractTextForOcr(base64, apiKey, geminiModel);
       } else if (provider === 'openai') {
         const extracted = await extractTextFromPdf(pdfBytes);
-        text = await extractTextForOcrOpenAI(extracted, apiKey);
+        text = await extractTextForOcrOpenAI(extracted, apiKey, openaiModel);
       } else {
         const extracted = await extractTextFromPdf(pdfBytes);
-        text = await extractTextForOcrClaude(extracted, apiKey);
+        text = await extractTextForOcrClaude(extracted, apiKey, claudeModel);
       }
       setOcrResult(text);
       setStatus(`OCR Complete in ${formatTime(timer + 1)}.`);
@@ -262,13 +281,13 @@ export default function App() {
       let toc = '';
       if (provider === 'gemini') {
         const base64 = toBase64(pdfBytes);
-        toc = await generateDetailedToc(base64, apiKey);
+        toc = await generateDetailedToc(base64, apiKey, geminiModel);
       } else if (provider === 'openai') {
         const text = await extractTextFromPdf(pdfBytes);
-        toc = await generateDetailedTocOpenAI(text, apiKey);
+        toc = await generateDetailedTocOpenAI(text, apiKey, openaiModel);
       } else {
         const text = await extractTextFromPdf(pdfBytes);
-        toc = await generateDetailedTocClaude(text, apiKey);
+        toc = await generateDetailedTocClaude(text, apiKey, claudeModel);
       }
       setTocResult(toc);
       
@@ -514,9 +533,14 @@ export default function App() {
               <div className="flex flex-col">
                 <span className="font-medium text-sm">{status}</span>
                 {loading && (
-                  <span className="text-[10px] text-sage/60 font-mono">
-                    Elapsed: {formatTime(timer)}
-                  </span>
+                  <div className="flex gap-2 items-center">
+                    <span className="text-[10px] text-sage/60 font-mono">
+                      Elapsed: {formatTime(timer)}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 bg-sage/10 text-sage rounded uppercase font-bold tracking-wider">
+                      {currentModel}
+                    </span>
+                  </div>
                 )}
               </div>
               <button onClick={() => setStatus(null)} className="ml-2 text-sage/40 hover:text-sage">
@@ -584,39 +608,82 @@ export default function App() {
                   </div>
                 </div>
                 {provider === 'gemini' && (
-                  <div>
-                    <label className="block text-sm font-medium text-sage/60 mb-2">Custom Gemini API Key</label>
-                    <input 
-                      type="password" 
-                      placeholder="Enter your Gemini API key..."
-                      value={customApiKey}
-                      onChange={(e) => setCustomApiKey(e.target.value)}
-                      className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
-                    />
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-sage/60 mb-2">Gemini Model</label>
+                      <select 
+                        value={geminiModel}
+                        onChange={(e) => setGeminiModel(e.target.value)}
+                        className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20 appearance-none"
+                      >
+                        <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite (High Quota)</option>
+                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (Complex Reasoning)</option>
+                        <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
+                        <option value="gemini-3-flash-preview">Gemini 3 Flash (Standard)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-sage/60 mb-2">Custom Gemini API Key</label>
+                      <input 
+                        type="password" 
+                        placeholder="Enter your Gemini API key..."
+                        value={customApiKey}
+                        onChange={(e) => setCustomApiKey(e.target.value)}
+                        className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
+                      />
+                    </div>
                   </div>
                 )}
                 {provider === 'openai' && (
-                  <div>
-                    <label className="block text-sm font-medium text-sage/60 mb-2">Custom OpenAI API Key</label>
-                    <input 
-                      type="password" 
-                      placeholder="Enter your OpenAI API key..."
-                      value={customOpenAiKey}
-                      onChange={(e) => setCustomOpenAiKey(e.target.value)}
-                      className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
-                    />
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-sage/60 mb-2">OpenAI Model</label>
+                      <select 
+                        value={openaiModel}
+                        onChange={(e) => setOpenaiModel(e.target.value)}
+                        className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20 appearance-none"
+                      >
+                        <option value="gpt-4o-mini">GPT-4o Mini (Fast & Cheap)</option>
+                        <option value="gpt-4o">GPT-4o (Most Powerful)</option>
+                        <option value="o1-mini">o1 Mini (Reasoning)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-sage/60 mb-2">Custom OpenAI API Key</label>
+                      <input 
+                        type="password" 
+                        placeholder="Enter your OpenAI API key..."
+                        value={customOpenAiKey}
+                        onChange={(e) => setCustomOpenAiKey(e.target.value)}
+                        className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
+                      />
+                    </div>
                   </div>
                 )}
                 {provider === 'claude' && (
-                  <div>
-                    <label className="block text-sm font-medium text-sage/60 mb-2">Custom Claude API Key</label>
-                    <input 
-                      type="password" 
-                      placeholder="Enter your Claude API key..."
-                      value={customClaudeApiKey}
-                      onChange={(e) => setCustomClaudeApiKey(e.target.value)}
-                      className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
-                    />
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-sage/60 mb-2">Claude Model</label>
+                      <select 
+                        value={claudeModel}
+                        onChange={(e) => setClaudeModel(e.target.value)}
+                        className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20 appearance-none"
+                      >
+                        <option value="claude-3-haiku-20240307">Claude 3 Haiku (Fastest)</option>
+                        <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet (Best Quality)</option>
+                        <option value="claude-3-opus-latest">Claude 3 Opus (Most Powerful)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-sage/60 mb-2">Custom Claude API Key</label>
+                      <input 
+                        type="password" 
+                        placeholder="Enter your Claude API key..."
+                        value={customClaudeApiKey}
+                        onChange={(e) => setCustomClaudeApiKey(e.target.value)}
+                        className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
+                      />
+                    </div>
                   </div>
                 )}
                 <p className="mt-2 text-xs text-sage/40">
@@ -636,7 +703,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="mt-auto py-12 text-sage/40 text-sm flex flex-col items-center gap-2">
-        <p>© 2026 pdfutils • Professional PDF Suite</p>
+        <p>© 2026 Antoniu-Daniel Zăpîrțan • Professional PDF Suite</p>
         <p className="italic">Optimized for psychotherapy and academic literature</p>
       </footer>
     </div>

@@ -5,11 +5,11 @@ export interface Chapter {
   startPage: number;
 }
 
-export async function detectChaptersOpenAI(text: string, apiKey: string): Promise<Chapter[]> {
+export async function detectChaptersOpenAI(text: string, apiKey: string, model: string = "gpt-4o-mini"): Promise<Chapter[]> {
   const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
   
   const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: model,
     messages: [
       {
         role: "system",
@@ -33,11 +33,11 @@ export async function detectChaptersOpenAI(text: string, apiKey: string): Promis
   }
 }
 
-export async function generateDetailedTocOpenAI(text: string, apiKey: string): Promise<string> {
+export async function generateDetailedTocOpenAI(text: string, apiKey: string, model: string = "gpt-4o-mini"): Promise<string> {
   const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
   
   const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: model,
     messages: [
       {
         role: "system",
@@ -53,11 +53,11 @@ export async function generateDetailedTocOpenAI(text: string, apiKey: string): P
   return response.choices[0].message.content || "No TOC generated.";
 }
 
-export async function extractTextForOcrOpenAI(text: string, apiKey: string): Promise<string> {
+export async function extractTextForOcrOpenAI(text: string, apiKey: string, model: string = "gpt-4o-mini"): Promise<string> {
   const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
   
   const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: model,
     messages: [
       {
         role: "system",
