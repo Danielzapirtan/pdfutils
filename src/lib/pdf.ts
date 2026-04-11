@@ -1,4 +1,25 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import * as pdfjs from 'pdfjs-dist';
+
+// Set worker path for pdfjs using a reliable CDN
+// For pdfjs-dist 4.0+, the worker is an ESM module (.mjs)
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+export async function extractTextFromPdf(pdfBytes: Uint8Array): Promise<string> {
+  // Use a slice to prevent detachment if the buffer is transferred to a worker
+  const loadingTask = pdfjs.getDocument({ data: pdfBytes.slice() });
+  const pdf = await loadingTask.promise;
+  let fullText = '';
+  
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items.map((item: any) => item.str).join(' ');
+    fullText += `--- Page ${i} ---\n${pageText}\n\n`;
+  }
+  
+  return fullText;
+}
 
 export async function splitPdfByRanges(pdfBytes: Uint8Array, ranges: string): Promise<{ name: string; bytes: Uint8Array }[]> {
   const srcDoc = await PDFDocument.load(pdfBytes);

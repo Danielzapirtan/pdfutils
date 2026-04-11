@@ -20,12 +20,15 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import JSZip from 'jszip';
 import { cn } from './lib/utils';
-import { splitPdfByRanges, prependToc } from './lib/pdf';
+import { splitPdfByRanges, prependToc, extractTextFromPdf } from './lib/pdf';
 import { detectChapters, generateDetailedToc, extractTextForOcr, type Chapter } from './services/gemini';
+import { detectChaptersOpenAI, generateDetailedTocOpenAI, extractTextForOcrOpenAI } from './services/openai';
 import { PDFDocument } from 'pdf-lib';
 
 type Tool = 'split' | 'chapters' | 'ocr' | 'toc';
+type Provider = 'gemini' | 'openai';
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -34,7 +37,11 @@ export default function App() {
   const [status, setStatus] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<Tool | null>(null);
   const [customApiKey, setCustomApiKey] = useState('');
+  const [customOpenAiKey, setCustomOpenAiKey] = useState('');
+  const [provider, setProvider] = useState<Provider>('openai');
   const [showSettings, setShowSettings] = useState(false);
+  const [timer, setTimer] = useState(0);
+  const [timerInterval, setTimerInterval] = useState<NodeJS.Timeout | null>(null);
   
   // Tool specific states
   const [ranges, setRanges] = useState('1-5, 6-10');
@@ -42,7 +49,13 @@ export default function App() {
   const [tocResult, setTocResult] = useState<string | null>(null);
   const [ocrResult, setOcrResult] = useState<string | null>(null);
 
-  const apiKey = useMemo(() => customApiKey || process.env.GEMINI_API_KEY || '', [customApiKey]);
+  const apiKey = useMemo(() => {
+    if (provider === 'gemini') {
+      return customApiKey || process.env.GEMINI_API_KEY || '';
+    } else {
+      return customOpenAiKey || process.env.OPENAI_API_KEY || '';
+    }
+  }, [customApiKey, customOpenAiKey, provider]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const selectedFile = acceptedFiles[0];
@@ -78,24 +91,62 @@ export default function App() {
   };
 
   const toBase64 = (bytes: Uint8Array) => {
-    return btoa(
-      bytes.reduce((data, byte) => data + String.fromCharCode(byte), '')
-    );
+    if (bytes.byteLength === 0) {
+      throw new Error("PDF data is unavailable (detached buffer). Please re-upload the file.");
+    }
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  };
+
+  const handleError = (e: any, defaultMsg: string) => {
+    console.error(e);
+    const msg = e?.message || String(e);
+    if (msg.includes('429') || msg.toLowerCase().includes('quota')) {
+      setStatus('API Quota Exceeded. Please check your billing or switch providers in Settings.');
+    } else {
+      setStatus(defaultMsg);
+    }
+  };
+
+  const startTimer = () => {
+    setTimer(0);
+    const interval = setInterval(() => {
+      setTimer(prev => prev + 1);
+    }, 1000);
+    setTimerInterval(interval);
+  };
+
+  const stopTimer = () => {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      setTimerInterval(null);
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const runSplit = async () => {
     if (!pdfBytes) return;
     setLoading(true);
     setStatus('Splitting PDF...');
+    startTimer();
     try {
       const results = await splitPdfByRanges(pdfBytes, ranges);
       results.forEach(res => handleDownload(res.bytes, res.name));
-      setStatus('Success! Files downloaded.');
+      setStatus(`Success! Files downloaded in ${formatTime(timer + 1)}.`);
     } catch (e) {
-      console.error(e);
-      setStatus('Error splitting PDF.');
+      handleError(e, 'Error splitting PDF.');
     } finally {
       setLoading(false);
+      stopTimer();
     }
   };
 
@@ -103,25 +154,35 @@ export default function App() {
     if (!pdfBytes || !apiKey) return;
     setLoading(true);
     setStatus('Analyzing chapters with AI...');
+    startTimer();
     try {
-      const base64 = toBase64(pdfBytes);
-      const detected = await detectChapters(base64, apiKey);
+      let detected: Chapter[] = [];
+      if (provider === 'gemini') {
+        const base64 = toBase64(pdfBytes);
+        detected = await detectChapters(base64, apiKey);
+      } else {
+        const text = await extractTextFromPdf(pdfBytes);
+        detected = await detectChaptersOpenAI(text, apiKey);
+      }
       setChapters(detected);
-      setStatus(`Detected ${detected.length} chapters.`);
+      setStatus(`Detected ${detected.length} chapters in ${formatTime(timer + 1)}.`);
     } catch (e) {
-      console.error(e);
-      setStatus('Error detecting chapters.');
+      handleError(e, 'Error detecting chapters.');
     } finally {
       setLoading(false);
+      stopTimer();
     }
   };
 
   const splitByChapters = async () => {
     if (!pdfBytes || chapters.length === 0) return;
     setLoading(true);
-    setStatus('Splitting by chapters...');
+    setStatus('Splitting by chapters and creating ZIP...');
+    startTimer();
     try {
+      const zip = new JSZip();
       const srcDoc = await PDFDocument.load(pdfBytes);
+      
       for (let i = 0; i < chapters.length; i++) {
         const start = chapters[i].startPage;
         const end = i < chapters.length - 1 ? chapters[i + 1].startPage - 1 : srcDoc.getPageCount();
@@ -136,15 +197,25 @@ export default function App() {
           const copiedPages = await newDoc.copyPages(srcDoc, pageIndices);
           copiedPages.forEach(page => newDoc.addPage(page));
           const bytes = await newDoc.save();
-          handleDownload(bytes, `Chapter_${i + 1}_${chapters[i].title.replace(/\s+/g, '_')}.pdf`);
+          const fileName = `Chapter_${i + 1}_${chapters[i].title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')}.pdf`;
+          zip.file(fileName, bytes);
         }
       }
-      setStatus('Success! Chapters downloaded.');
+      
+      const zipContent = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipContent);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${file?.name.replace('.pdf', '')}_chapters.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      setStatus(`Success! ZIP downloaded in ${formatTime(timer + 1)}.`);
     } catch (e) {
-      console.error(e);
-      setStatus('Error splitting by chapters.');
+      handleError(e, 'Error splitting by chapters.');
     } finally {
       setLoading(false);
+      stopTimer();
     }
   };
 
@@ -152,16 +223,23 @@ export default function App() {
     if (!pdfBytes || !apiKey) return;
     setLoading(true);
     setStatus('Performing OCR/Text Extraction...');
+    startTimer();
     try {
-      const base64 = toBase64(pdfBytes);
-      const text = await extractTextForOcr(base64, apiKey);
+      let text = '';
+      if (provider === 'gemini') {
+        const base64 = toBase64(pdfBytes);
+        text = await extractTextForOcr(base64, apiKey);
+      } else {
+        const extracted = await extractTextFromPdf(pdfBytes);
+        text = await extractTextForOcrOpenAI(extracted, apiKey);
+      }
       setOcrResult(text);
-      setStatus('OCR Complete.');
+      setStatus(`OCR Complete in ${formatTime(timer + 1)}.`);
     } catch (e) {
-      console.error(e);
-      setStatus('Error during OCR.');
+      handleError(e, 'Error during OCR.');
     } finally {
       setLoading(false);
+      stopTimer();
     }
   };
 
@@ -169,19 +247,26 @@ export default function App() {
     if (!pdfBytes || !apiKey) return;
     setLoading(true);
     setStatus('Generating detailed TOC...');
+    startTimer();
     try {
-      const base64 = toBase64(pdfBytes);
-      const toc = await generateDetailedToc(base64, apiKey);
+      let toc = '';
+      if (provider === 'gemini') {
+        const base64 = toBase64(pdfBytes);
+        toc = await generateDetailedToc(base64, apiKey);
+      } else {
+        const text = await extractTextFromPdf(pdfBytes);
+        toc = await generateDetailedTocOpenAI(text, apiKey);
+      }
       setTocResult(toc);
       
       const newPdfBytes = await prependToc(pdfBytes, 'Pedagogical Architecture - Detailed TOC', toc);
       handleDownload(newPdfBytes, `pedagogical_architecture_${file?.name || 'document'}.pdf`);
-      setStatus('Success! Enhanced PDF downloaded.');
+      setStatus(`Success! Enhanced PDF downloaded in ${formatTime(timer + 1)}.`);
     } catch (e) {
-      console.error(e);
-      setStatus('Error generating TOC.');
+      handleError(e, 'Error generating TOC.');
     } finally {
       setLoading(false);
+      stopTimer();
     }
   };
 
@@ -412,8 +497,15 @@ export default function App() {
               exit={{ opacity: 0, y: 50 }}
               className="fixed bottom-8 left-1/2 -translate-x-1/2 glass-panel px-6 py-3 rounded-full flex items-center gap-3 shadow-xl z-50"
             >
-              {status.includes('Error') ? <AlertCircle className="text-red-500" /> : <CheckCircle2 className="text-green-500" />}
-              <span className="font-medium">{status}</span>
+              {status.includes('Error') || status.includes('Exceeded') ? <AlertCircle className="text-red-500" /> : <CheckCircle2 className="text-green-500" />}
+              <div className="flex flex-col">
+                <span className="font-medium text-sm">{status}</span>
+                {loading && (
+                  <span className="text-[10px] text-sage/60 font-mono">
+                    Elapsed: {formatTime(timer)}
+                  </span>
+                )}
+              </div>
               <button onClick={() => setStatus(null)} className="ml-2 text-sage/40 hover:text-sage">
                 <X size={16} />
               </button>
@@ -447,18 +539,54 @@ export default function App() {
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-sage/60 mb-2">Custom Gemini API Key</label>
-                  <input 
-                    type="password" 
-                    placeholder="Enter your API key..."
-                    value={customApiKey}
-                    onChange={(e) => setCustomApiKey(e.target.value)}
-                    className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
-                  />
-                  <p className="mt-2 text-xs text-sage/40">
-                    If left blank, the application will use the default system key.
-                  </p>
+                  <label className="block text-sm font-medium text-sage/60 mb-2">AI Provider</label>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setProvider('gemini')}
+                      className={cn(
+                        "flex-1 py-2 rounded-xl text-sm font-medium transition-all",
+                        provider === 'gemini' ? "bg-sage text-white" : "bg-sage/5 text-sage hover:bg-sage/10"
+                      )}
+                    >
+                      Gemini
+                    </button>
+                    <button 
+                      onClick={() => setProvider('openai')}
+                      className={cn(
+                        "flex-1 py-2 rounded-xl text-sm font-medium transition-all",
+                        provider === 'openai' ? "bg-sage text-white" : "bg-sage/5 text-sage hover:bg-sage/10"
+                      )}
+                    >
+                      OpenAI
+                    </button>
+                  </div>
                 </div>
+                {provider === 'gemini' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-sage/60 mb-2">Custom Gemini API Key</label>
+                    <input 
+                      type="password" 
+                      placeholder="Enter your Gemini API key..."
+                      value={customApiKey}
+                      onChange={(e) => setCustomApiKey(e.target.value)}
+                      className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-sage/60 mb-2">Custom OpenAI API Key</label>
+                    <input 
+                      type="password" 
+                      placeholder="Enter your OpenAI API key..."
+                      value={customOpenAiKey}
+                      onChange={(e) => setCustomOpenAiKey(e.target.value)}
+                      className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
+                    />
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-sage/40">
+                  If left blank, the application will use the default system key if available.
+                </p>
                 <button 
                   onClick={() => setShowSettings(false)}
                   className="w-full py-4 bg-sage text-white rounded-2xl font-semibold hover:bg-sage/90 transition-colors"
@@ -473,7 +601,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="mt-auto py-12 text-sage/40 text-sm flex flex-col items-center gap-2">
-        <p>© 2026 Antoniu-Daniel Zăpîrțan • Professional PDF Suite</p>
+        <p>© 2026 pdfutils • Professional PDF Suite</p>
         <p className="italic">Optimized for psychotherapy and academic literature</p>
       </footer>
     </div>
