@@ -25,10 +25,11 @@ import { cn } from './lib/utils';
 import { splitPdfByRanges, prependToc, extractTextFromPdf } from './lib/pdf';
 import { detectChapters, generateDetailedToc, extractTextForOcr, type Chapter } from './services/gemini';
 import { detectChaptersOpenAI, generateDetailedTocOpenAI, extractTextForOcrOpenAI } from './services/openai';
+import { detectChaptersClaude, generateDetailedTocClaude, extractTextForOcrClaude } from './services/claude';
 import { PDFDocument } from 'pdf-lib';
 
 type Tool = 'split' | 'chapters' | 'ocr' | 'toc';
-type Provider = 'gemini' | 'openai';
+type Provider = 'gemini' | 'openai' | 'claude';
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -38,6 +39,7 @@ export default function App() {
   const [activeTool, setActiveTool] = useState<Tool | null>(null);
   const [customApiKey, setCustomApiKey] = useState('');
   const [customOpenAiKey, setCustomOpenAiKey] = useState('');
+  const [customClaudeApiKey, setCustomClaudeApiKey] = useState('');
   const [provider, setProvider] = useState<Provider>('openai');
   const [showSettings, setShowSettings] = useState(false);
   const [timer, setTimer] = useState(0);
@@ -52,10 +54,12 @@ export default function App() {
   const apiKey = useMemo(() => {
     if (provider === 'gemini') {
       return customApiKey || process.env.GEMINI_API_KEY || '';
-    } else {
+    } else if (provider === 'openai') {
       return customOpenAiKey || process.env.OPENAI_API_KEY || '';
+    } else {
+      return customClaudeApiKey || process.env.ANTHROPIC_API_KEY || '';
     }
-  }, [customApiKey, customOpenAiKey, provider]);
+  }, [customApiKey, customOpenAiKey, customClaudeApiKey, provider]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const selectedFile = acceptedFiles[0];
@@ -160,9 +164,12 @@ export default function App() {
       if (provider === 'gemini') {
         const base64 = toBase64(pdfBytes);
         detected = await detectChapters(base64, apiKey);
-      } else {
+      } else if (provider === 'openai') {
         const text = await extractTextFromPdf(pdfBytes);
         detected = await detectChaptersOpenAI(text, apiKey);
+      } else {
+        const text = await extractTextFromPdf(pdfBytes);
+        detected = await detectChaptersClaude(text, apiKey);
       }
       setChapters(detected);
       setStatus(`Detected ${detected.length} chapters in ${formatTime(timer + 1)}.`);
@@ -229,9 +236,12 @@ export default function App() {
       if (provider === 'gemini') {
         const base64 = toBase64(pdfBytes);
         text = await extractTextForOcr(base64, apiKey);
-      } else {
+      } else if (provider === 'openai') {
         const extracted = await extractTextFromPdf(pdfBytes);
         text = await extractTextForOcrOpenAI(extracted, apiKey);
+      } else {
+        const extracted = await extractTextFromPdf(pdfBytes);
+        text = await extractTextForOcrClaude(extracted, apiKey);
       }
       setOcrResult(text);
       setStatus(`OCR Complete in ${formatTime(timer + 1)}.`);
@@ -253,9 +263,12 @@ export default function App() {
       if (provider === 'gemini') {
         const base64 = toBase64(pdfBytes);
         toc = await generateDetailedToc(base64, apiKey);
-      } else {
+      } else if (provider === 'openai') {
         const text = await extractTextFromPdf(pdfBytes);
         toc = await generateDetailedTocOpenAI(text, apiKey);
+      } else {
+        const text = await extractTextFromPdf(pdfBytes);
+        toc = await generateDetailedTocClaude(text, apiKey);
       }
       setTocResult(toc);
       
@@ -559,9 +572,18 @@ export default function App() {
                     >
                       OpenAI
                     </button>
+                    <button 
+                      onClick={() => setProvider('claude')}
+                      className={cn(
+                        "flex-1 py-2 rounded-xl text-sm font-medium transition-all",
+                        provider === 'claude' ? "bg-sage text-white" : "bg-sage/5 text-sage hover:bg-sage/10"
+                      )}
+                    >
+                      Claude
+                    </button>
                   </div>
                 </div>
-                {provider === 'gemini' ? (
+                {provider === 'gemini' && (
                   <div>
                     <label className="block text-sm font-medium text-sage/60 mb-2">Custom Gemini API Key</label>
                     <input 
@@ -572,7 +594,8 @@ export default function App() {
                       className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
                     />
                   </div>
-                ) : (
+                )}
+                {provider === 'openai' && (
                   <div>
                     <label className="block text-sm font-medium text-sage/60 mb-2">Custom OpenAI API Key</label>
                     <input 
@@ -580,6 +603,18 @@ export default function App() {
                       placeholder="Enter your OpenAI API key..."
                       value={customOpenAiKey}
                       onChange={(e) => setCustomOpenAiKey(e.target.value)}
+                      className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
+                    />
+                  </div>
+                )}
+                {provider === 'claude' && (
+                  <div>
+                    <label className="block text-sm font-medium text-sage/60 mb-2">Custom Claude API Key</label>
+                    <input 
+                      type="password" 
+                      placeholder="Enter your Claude API key..."
+                      value={customClaudeApiKey}
+                      onChange={(e) => setCustomClaudeApiKey(e.target.value)}
                       className="w-full p-4 bg-white border border-sage/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sage/20"
                     />
                   </div>

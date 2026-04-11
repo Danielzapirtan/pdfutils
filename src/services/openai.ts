@@ -9,7 +9,7 @@ export async function detectChaptersOpenAI(text: string, apiKey: string): Promis
   const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
   
   const response = await openai.chat.completions.create({
-    model: "babbage-002",
+    model: "gpt-4o-mini",
     messages: [
       {
         role: "system",
@@ -37,7 +37,7 @@ export async function generateDetailedTocOpenAI(text: string, apiKey: string): P
   const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
   
   const response = await openai.chat.completions.create({
-    model: "babbage-002",
+    model: "gpt-4o-mini",
     messages: [
       {
         role: "system",
@@ -57,7 +57,7 @@ export async function extractTextForOcrOpenAI(text: string, apiKey: string): Pro
   const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
   
   const response = await openai.chat.completions.create({
-    model: "babbage-002",
+    model: "gpt-4o-mini",
     messages: [
       {
         role: "system",
