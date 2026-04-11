@@ -8,7 +8,7 @@ export interface Chapter {
 export async function detectChapters(pdfBase64: string, apiKey: string): Promise<Chapter[]> {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-3.1-flash-lite-preview",
     contents: [
       {
         parts: [
@@ -51,7 +51,7 @@ export async function detectChapters(pdfBase64: string, apiKey: string): Promise
 export async function generateDetailedToc(pdfBase64: string, apiKey: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-3.1-flash-lite-preview",
     contents: [
       {
         parts: [
@@ -75,7 +75,7 @@ export async function generateDetailedToc(pdfBase64: string, apiKey: string): Pr
 export async function extractTextForOcr(pdfBase64: string, apiKey: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-3.1-flash-lite-preview",
     contents: [
       {
         parts: [
