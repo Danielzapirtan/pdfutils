@@ -43,7 +43,7 @@ export default function App() {
   const [geminiModel, setGeminiModel] = useState('gemini-3.1-flash-lite-preview');
   const [openaiModel, setOpenaiModel] = useState('gpt-4o-mini');
   const [claudeModel, setClaudeModel] = useState('claude-3-haiku-20240307');
-  const [provider, setProvider] = useState<Provider>('openai');
+  const [provider, setProvider] = useState<Provider>('gemini');
   const [showSettings, setShowSettings] = useState(false);
   const [timer, setTimer] = useState(0);
   const [timerInterval, setTimerInterval] = useState<NodeJS.Timeout | null>(null);
