@@ -1,0 +1,5 @@
+{
+  "name": "pdfutils",
+  "description": "A professional PDF utility suite for psychotherapy books. Split by pages or chapters, OCR to searchable PDF, and generate detailed 'pedagogical architecture' tables of contents.",
+  "requestFramePermissions": []
+}
